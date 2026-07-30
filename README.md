@@ -38,7 +38,7 @@ agent and API endpoints beyond a health check come later too.
 ## Project structure
 
 ```
-pokego-advisor/
+metadex/
 ├── backend/
 │   ├── main.py              # FastAPI app
 │   ├── config.py            # environment variables and settings
@@ -58,7 +58,7 @@ pokego-advisor/
 ## Setup
 
 ```bash
-cd pokego-advisor
+cd metadex
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
