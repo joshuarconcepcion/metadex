@@ -1,0 +1,12 @@
+langchain
+langchain-anthropic
+langchain-chroma
+langchain-community
+langgraph
+chromadb
+sentence-transformers
+fastapi
+uvicorn
+httpx
+python-dotenv
+pytest
