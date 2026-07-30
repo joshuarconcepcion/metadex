@@ -91,19 +91,21 @@ def get_pokemon_go_stats(pokemon_name: str) -> Optional[dict]:
             continue
 
         stats = pokemon_settings.get("stats", {})
+
+        types = []
+        primary_type = _strip_type_prefix(pokemon_settings.get("type"))
+        secondary_type = _strip_type_prefix(pokemon_settings.get("type2"))
+        if primary_type:
+            types.append(primary_type)
+        if secondary_type:
+            types.append(secondary_type)
+
         return {
             "pokemon_id": pokemon_settings.get("pokemonId"),
             "base_attack": stats.get("baseAttack"),
             "base_defense": stats.get("baseDefense"),
             "base_stamina": stats.get("baseStamina"),
-            "types": [
-                t
-                for t in (
-                    _strip_type_prefix(pokemon_settings.get("type")),
-                    _strip_type_prefix(pokemon_settings.get("type2")),
-                )
-                if t
-            ],
+            "types": types,
             "fast_move_ids": list(pokemon_settings.get("quickMoves", []))
             + list(pokemon_settings.get("eliteQuickMoves", [])),
             "charged_move_ids": list(pokemon_settings.get("cinematicMoves", []))
