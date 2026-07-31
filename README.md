@@ -26,14 +26,42 @@ independently — they're derived from the two neighboring integer CPMs via
 `get_cp_multipliers()` does. This was verified against PvPoke's
 independently published half-level table (exact match).
 
-## Project status: Phase 0
+## PvP rankings: PvPoke, not a hand-written tier list
 
-Phase 0 sets up project structure, dependencies, and the static data
-foundation the agent will build on: Pokemon GO stats/moves loading, type
-effectiveness, and CP/PvP stat-product calculations. The RAG pipeline
-(`backend/rag/`) and agent tools (`backend/agents/`) are stubbed out with
-docstrings describing what lands in Phases 1-2; the conversational
-agent and API endpoints beyond a health check come later too.
+The RAG knowledge base (`backend/rag/`) pulls PvP meta rankings from
+[PvPoke's own GitHub repo](https://github.com/pvpoke/pvpoke) (MIT
+licensed) rather than a hand-written tier list file, since the meta
+shifts too fast for a static file to stay accurate — this is the raw
+JSON PvPoke's own site is generated from, not the pvpoke.com website.
+
+Two schema quirks worth knowing if you touch `backend/data/pvpoke.py`,
+both verified directly against the live endpoints:
+
+- `moveset` is a flat `[fastMove, chargedMove1, chargedMove2]` array,
+  not a `{"fastMove": ..., "chargedMoves": [...]}` object.
+- `scores` is an unlabeled 6-element array, not a dict. The order —
+  verified against PvPoke's own `RankerOverall.js` — is
+  `[lead, closer, switch, charger, attacker, consistency]`. There are
+  also two candidate "rating" fields; the one we use (`score`, 0-100)
+  is the one that's actually monotonic with rank position, unlike the
+  top-level `rating` field.
+
+The only hand-written content is `backend/data/knowledge/game_mechanics.md`
+— evergreen mechanics (IVs, CP caps, shadow/purified multipliers,
+weather boost, stardust costs) that don't shift with the meta. The
+shadow Pokemon defense multiplier there (~0.8333x, not a flat -20%)
+and the weather boost figures were verified against the live game
+master's `COMBAT_SETTINGS`/`WEATHER_BONUS_SETTINGS`, not assumed.
+
+## Project status: Phase 1
+
+Phase 0 built the static data foundation (Pokemon GO stats/moves
+loading, type effectiveness, CP/PvP stat-product calculations). Phase 1
+adds the RAG knowledge base: live PvPoke rankings plus the mechanics
+reference, chunked and embedded into a ChromaDB collection queryable
+via MMR or direct similarity search. Agent tools (`backend/agents/`)
+and the conversational agent/API endpoints beyond a health check land
+in Phase 2+.
 
 ## Project structure
 
@@ -45,8 +73,17 @@ metadex/
 │   ├── data/
 │   │   ├── loader.py        # loads and caches PokeMiners game master data
 │   │   ├── type_chart.py    # type effectiveness calculations
-│   │   └── cp_calculator.py # CP and PvP stat-product calculations
-│   ├── rag/                 # community content ingestion + retrieval (Phase 1)
+│   │   ├── cp_calculator.py # CP and PvP stat-product calculations
+│   │   ├── pvpoke.py        # fetches and caches live PvPoke rankings
+│   │   └── knowledge/
+│   │       └── game_mechanics.md  # evergreen mechanics reference
+│   ├── rag/
+│   │   ├── ingestion.py     # combines PvPoke + mechanics into Documents
+│   │   ├── store.py         # ChromaDB vector store (all-MiniLM-L6-v2)
+│   │   └── retriever.py     # MMR + similarity search over the store
+│   ├── scripts/
+│   │   ├── build_knowledge_base.py   # initial build / cache-respecting rebuild
+│   │   └── update_knowledge_base.py  # forces a fresh PvPoke fetch
 │   ├── agents/tools/        # LangChain tools for the agent (Phase 2)
 │   └── tests/
 ├── frontend/                 # Next.js app (Phase 3)
@@ -73,8 +110,23 @@ cp .env.example .env
 pytest
 ```
 
-The first run downloads and caches the game master (~19MB); subsequent
-runs within 24 hours reuse the cache.
+The first run downloads and caches the game master (~19MB) and the
+`all-MiniLM-L6-v2` embedding model; subsequent runs reuse both.
+
+## Building the knowledge base
+
+```bash
+python -m backend.scripts.build_knowledge_base
+```
+
+Fetches PvPoke rankings (respecting the 24h cache) and the mechanics
+doc, embeds them, and writes the `pokego_meta` collection to
+`CHROMA_DB_PATH`. After a Niantic balance update or new competitive
+season, force a live re-fetch instead:
+
+```bash
+python -m backend.scripts.update_knowledge_base
+```
 
 ## Running the backend
 
@@ -96,5 +148,6 @@ docker compose up --build
 See `.env.example`:
 
 - `ANTHROPIC_API_KEY` — Claude API key, used by the LangGraph agent (Phase 2+)
-- `CHROMA_DB_PATH` — where the ChromaDB vector store persists (Phase 1+)
-- `CACHE_PATH` — where the cached game master JSON is stored
+- `CHROMA_DB_PATH` — where the `pokego_meta` ChromaDB collection persists
+- `CACHE_PATH` — where the cached game master JSON and PvPoke rankings
+  (`pvpoke_great.json`, `pvpoke_ultra.json`, `pvpoke_master.json`) are stored
