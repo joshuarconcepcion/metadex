@@ -88,6 +88,18 @@ def fetch_all_rankings(force_refresh: bool = False) -> dict:
 
 
 def _build_document(entry: dict, league: str, rank: int) -> Document:
+    """Converts one raw PvPoke ranking entry into a Document.
+
+    Three things here rely on the real (undocumented) PvPoke schema
+    rather than the obvious one — see the module docstring for how
+    each was verified:
+    - "moveset" is unpacked positionally as [fast, charged, charged],
+      not read as named fields.
+    - "scores" is mapped through _SCORE_ORDER, since the array itself
+      has no field names.
+    - The rating we report is entry["score"], not entry["rating"] —
+      "rating" is a different, non-monotonic per-Pokemon stat.
+    """
     fast_move, charged_move_1, charged_move_2 = entry["moveset"]
     charged_moves = [charged_move_1, charged_move_2]
     scores = dict(zip(_SCORE_ORDER, entry.get("scores", [])))
