@@ -53,15 +53,48 @@ shadow Pokemon defense multiplier there (~0.8333x, not a flat -20%)
 and the weather boost figures were verified against the live game
 master's `COMBAT_SETTINGS`/`WEATHER_BONUS_SETTINGS`, not assumed.
 
-## Project status: Phase 1
+## The agent: a few library gotchas worth knowing
 
-Phase 0 built the static data foundation (Pokemon GO stats/moves
-loading, type effectiveness, CP/PvP stat-product calculations). Phase 1
-adds the RAG knowledge base: live PvPoke rankings plus the mechanics
-reference, chunked and embedded into a ChromaDB collection queryable
-via MMR or direct similarity search. Agent tools (`backend/agents/`)
-and the conversational agent/API endpoints beyond a health check land
-in Phase 2+.
+Phase 2's LangGraph agent (`backend/agents/`) hit two things worth
+flagging if you touch this code:
+
+- **`langgraph.prebuilt.create_react_agent` is deprecated** as of
+  LangGraph 1.0 (slated for removal in 2.0), replaced by
+  `langchain.agents.create_agent` — same input/output shape, same
+  `stream_mode="messages"` token streaming, just a different import and
+  `system_prompt=` instead of `prompt=`/`state_modifier=` (`state_modifier`
+  doesn't exist on either constructor anymore and raises a `TypeError`).
+  This project builds on the non-deprecated one.
+- **`RunnableWithMessageHistory` cannot wrap a `create_agent()` graph
+  directly.** The graph's output is the *entire* accumulated
+  conversation (input + everything it added), but
+  `RunnableWithMessageHistory` independently appends both "the input"
+  and "the output" to history — so with no adapter, every turn re-saves
+  the whole prior history on top of itself. Verified experimentally:
+  two turns produced 9 stored messages instead of 4. `chain.py`'s
+  `_strip_to_new_messages()` wraps the agent so its output only
+  contains what it added *this* turn, which fixes it.
+- Real token streaming (`stream_query`) bypasses
+  `RunnableWithMessageHistory`'s own `.stream()` — wrapping a LangGraph
+  agent in a plain Python-function `Runnable` gives you the single
+  final result, not real deltas — and instead calls the compiled
+  agent's native `stream_mode="messages"` directly.
+
+Also: the spec's original model string (`claude-sonnet-4-6`) is a real,
+still-active model, but Claude Sonnet 5 has since superseded it as the
+current Sonnet-tier model — the agent targets `claude-sonnet-5`.
+
+## Project status: Phase 2
+
+Phase 0 built the static data foundation (stats/moves loading, type
+effectiveness, CP/PvP stat-product calculations). Phase 1 added the RAG
+knowledge base (live PvPoke rankings + mechanics reference, embedded
+into ChromaDB). Phase 2 adds the conversational agent itself: six
+LangChain tools wrapping the Phase 0/1 data and retrieval layers, a
+LangGraph tool-calling agent (`backend/agents/advisor.py`), and
+persistent multi-turn conversation history backed by SQLite
+(`backend/agents/memory.py`, `backend/agents/chain.py`). API endpoints
+beyond the Phase 0 health check, and the frontend, land in Phase 3.
 
 ## Project structure
 
@@ -84,7 +117,13 @@ metadex/
 │   ├── scripts/
 │   │   ├── build_knowledge_base.py   # initial build / cache-respecting rebuild
 │   │   └── update_knowledge_base.py  # forces a fresh PvPoke fetch
-│   ├── agents/tools/        # LangChain tools for the agent (Phase 2)
+│   ├── agents/
+│   │   ├── advisor.py       # builds the LangGraph tool-calling agent
+│   │   ├── memory.py        # SQLite-backed persistent chat history
+│   │   ├── chain.py         # wires history into the agent; query/stream_query
+│   │   └── tools/
+│   │       ├── pokemon_tools.py  # stats, PvP IVs, type matchups, battle matchups
+│   │       └── meta_tools.py     # RAG meta search, raid counters
 │   └── tests/
 ├── frontend/                 # Next.js app (Phase 3)
 ├── requirements.txt
@@ -147,7 +186,8 @@ docker compose up --build
 
 See `.env.example`:
 
-- `ANTHROPIC_API_KEY` — Claude API key, used by the LangGraph agent (Phase 2+)
+- `ANTHROPIC_API_KEY` — Claude API key, used by the advisor agent (`claude-sonnet-5`)
 - `CHROMA_DB_PATH` — where the `pokego_meta` ChromaDB collection persists
-- `CACHE_PATH` — where the cached game master JSON and PvPoke rankings
-  (`pvpoke_great.json`, `pvpoke_ultra.json`, `pvpoke_master.json`) are stored
+- `CACHE_PATH` — where the cached game master JSON, PvPoke rankings
+  (`pvpoke_great.json`, `pvpoke_ultra.json`, `pvpoke_master.json`), and
+  the persistent conversation history (`conversations.sqlite3`) are stored

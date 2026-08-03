@@ -24,6 +24,7 @@ rather than hardcoding any lookup table.
 """
 import json
 import math
+import re
 import time
 from pathlib import Path
 from typing import Optional
@@ -37,6 +38,13 @@ CACHE_TTL_SECONDS = 24 * 60 * 60
 
 _TYPE_PREFIX = "POKEMON_TYPE_"
 _MAX_POKEMON_LEVEL = 51
+
+# Pokemon templateIds are always "V####_POKEMON_<NAME>[_FORM]" (e.g.
+# "V0308_POKEMON_MEDICHAM") — verified against every pokemonSettings
+# template in the game master (2456 templates, zero exceptions). The
+# leading number is the National Pokedex number, which the game master
+# doesn't expose as its own field anywhere else.
+_DEX_NUMBER_PATTERN = re.compile(r"^V(\d+)_POKEMON_")
 
 
 def _cache_file() -> Path:
@@ -100,8 +108,12 @@ def get_pokemon_go_stats(pokemon_name: str) -> Optional[dict]:
         if secondary_type:
             types.append(secondary_type)
 
+        dex_match = _DEX_NUMBER_PATTERN.match(template.get("templateId", ""))
+        dex_number = int(dex_match.group(1)) if dex_match else None
+
         return {
             "pokemon_id": pokemon_settings.get("pokemonId"),
+            "dex_number": dex_number,
             "base_attack": stats.get("baseAttack"),
             "base_defense": stats.get("baseDefense"),
             "base_stamina": stats.get("baseStamina"),

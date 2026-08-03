@@ -68,6 +68,7 @@ def test_get_pokemon_go_stats_medicham():
     stats = loader.get_pokemon_go_stats("medicham")
 
     assert stats is not None
+    assert stats["dex_number"] == 308
     assert stats["base_attack"] == 121
     assert stats["base_defense"] == 152
     assert stats["base_stamina"] == 155
